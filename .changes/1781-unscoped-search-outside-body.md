@@ -1,0 +1,3 @@
+### Fixed
+
+- **`@reticlehq/browser` — an unscoped find and text checks now see content appended outside `<body>`.** Content appended straight to `document.documentElement` (a portal whose root sits outside body) IS visible on screen, but the default search container was `document.body`, so `find` and a `text` check reported the text as absent with no hint why. An unscoped search now covers every element child of `<html>` other than `<head>` — each root is searched separately so a `<title>` can never answer a text query with words nobody can see. Scoped queries are unchanged. Closes [#1781](https://github.com/reticlehq/reticle/issues/1781).

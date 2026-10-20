@@ -13,7 +13,7 @@ import {
   type QueryResult,
   TRANSPORT_LIMITS,
 } from '@reticlehq/core';
-import { isActionTarget, isElement, isFrame, isInput, isSelect, isTextArea } from './realm.js';
+import { isElement, isFrame, isInput, isSelect, isTextArea } from './realm.js';
 import { capturedRootOf } from './shadow-registry.js';
 import {
   getAccessibleName,
@@ -29,8 +29,8 @@ import { dialogCovering, isIgnored, isReticleOverlay, isWordsIgnored } from './d
 import { isSensitiveKey } from '@/security/serialization.js';
 import { declaredTestids } from '@/registry/capabilities.js';
 import { identifyComponent } from '@/registry/stores/adapters.js';
-import { refs } from './addressing/refs.js';
 import { getTestIdAttr, readTestId, testIdSelector } from './addressing/testid-attr.js';
+import { resolveContainer, searchRoots } from './container-scope.js';
 import { stableSelectorFor } from './stable-selector.js';
 import {
   exactVisibleText,
@@ -152,33 +152,6 @@ function semanticNameTarget(el: Element): boolean {
     el.hasAttribute('aria-label') ||
     el.hasAttribute('aria-labelledby')
   );
-}
-
-/**
- * Resolve a scope to its container. A container of `null` means a scope was GIVEN but resolved to
- * nothing (unmounted, or a selector that matches no element) - the caller must NOT fall back to the
- * whole page, or a scoped query silently widens into a phantom match. `scope === undefined` (no scope)
- * legitimately searches the body.
- */
-function resolveContainer(scope: string | undefined): {
-  container: HTMLElement | null;
-  scopeMissing: boolean;
-} {
-  if (scope === undefined) return { container: document.body, scopeMissing: false };
-  // An SVG element is a scope too. `look` hands out refs for SVG links, and the action layer drives
-  // them, so refusing one here reported a scope the page plainly has as MISSING - a floor plan whose
-  // rooms are `<a href>` inside an `<svg>` could be clicked but never scoped to (#1122). The locators
-  // below read only what Element has (attributes, children, text), which is also why `elementsUnder`
-  // already walks SVG descendants.
-  const byRef = refs.resolve(scope);
-  if (isActionTarget(byRef)) return { container: byRef, scopeMissing: false };
-  try {
-    const found = document.querySelector(scope);
-    if (isActionTarget(found)) return { container: found, scopeMissing: false };
-  } catch {
-    // invalid selector - treat as a missing scope, never a whole-page search
-  }
-  return { container: null, scopeMissing: true };
 }
 
 /**
@@ -550,8 +523,12 @@ function findCandidates(query: ElementQuery): { candidates: HTMLElement[]; scope
       out.push(el);
     }
   };
-  collect(findIn(container, query));
-  for (const embedded of embeddedRootsUnder(container)) collect(findIn(embedded, query));
+  // An unscoped search covers every element child of <html> other than <head> (#1781) — see
+  // searchRoots for why each root is searched separately.
+  for (const root of searchRoots(query.scope, container)) {
+    collect(findIn(root, query));
+    for (const embedded of embeddedRootsUnder(root)) collect(findIn(embedded, query));
+  }
   return { candidates: out, scopeMissing };
 }
 

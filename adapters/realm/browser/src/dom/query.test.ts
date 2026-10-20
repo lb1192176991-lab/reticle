@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runQuery } from './query.js';
 import type { ElementQuery } from '@reticlehq/core';
 
@@ -128,5 +128,54 @@ describe('label queries prefer exact accessible names', () => {
 
     expect(result.count).toBe(1);
     expect(result.elements[0]?.name).toBe('Save');
+  });
+});
+
+/**
+ * Content appended straight to `documentElement` is visible on screen, and an unscoped find or
+ * text check that could not see it reported the text as absent with no hint why (#1781). An
+ * unscoped search covers every element child of <html> other than <head> — <head> text stays out
+ * so a <title> can never answer a text query with words nobody can see.
+ */
+describe('an unscoped search covers content outside <body>', () => {
+  const appended: HTMLElement[] = [];
+
+  const appendOutside = (text: string): HTMLElement => {
+    const node = document.createElement('div');
+    node.textContent = text;
+    document.documentElement.appendChild(node);
+    appended.push(node);
+    return node;
+  };
+
+  beforeEach(() => {
+    document.head.innerHTML = '<title>Off page</title>';
+    appended.length = 0;
+  });
+
+  afterEach(() => {
+    for (const node of appended) node.remove();
+  });
+
+  it('finds text appended straight to <html>', () => {
+    appendOutside('Deployed outside');
+    expect(runQuery({ text: 'Deployed outside' }).count).toBe(1);
+  });
+
+  it('finds a testid outside <body> too', () => {
+    const node = appendOutside('Pay now');
+    node.setAttribute('data-testid', 'pay');
+    expect(runQuery({ testid: 'pay' }).count).toBe(1);
+  });
+
+  it('does not match <head> text', () => {
+    appendOutside('Deployed outside');
+    expect(runQuery({ text: 'Off page' }).count).toBe(0);
+  });
+
+  it('a scoped query still stays inside its scope', () => {
+    document.body.innerHTML = '<section id="one"><p>Only here</p></section>';
+    appendOutside('Only here');
+    expect(runQuery({ text: 'Only here', scope: '#one' }).count).toBe(1);
   });
 });
