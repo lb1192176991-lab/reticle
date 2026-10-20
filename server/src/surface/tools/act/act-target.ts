@@ -28,6 +28,16 @@ const MISSING_ACT_TARGET =
   'A press of Escape, Tab, or a modifier shortcut is a document key and needs neither.';
 
 /**
+ * The `target` fields a query forwards: everything else is read, translated and dropped here.
+ * Anything forwarded that is not a string is silently dropped by the browser query, and a dropped
+ * `name` turns `{ role: "link", name: {} }` into "match every link". Refused at this boundary.
+ */
+const QUERY_READ_FIELDS = ['by', 'value', 'name', 'scope'] as const;
+
+/** Refusal when a forwarded target field is not a string — the query would drop it and widen the match. */
+const targetFieldTypeRefusal = (field: string): string => `\`target.${field}\` must be a string`;
+
+/**
  * Resolve an action's element: an explicit `ref`, or a `target` query resolved in the SAME call.
  *
  * Requiring a ref meant every verification paid a `reticle_query` turn first just to learn one
@@ -73,7 +83,20 @@ export async function resolveActTarget(
     if (isGlobalPressCall(args)) return { kind: 'global', ref: '' };
     return { kind: 'error', message: MISSING_ACT_TARGET };
   }
-  const q = normalizeQueryArgs(asRecord(target));
+  const record = asRecord(target);
+  /*
+   * A forwarded field that is not a string is dropped by the browser query and silently WIDENS the
+   * match — `{ role: "link", name: {} }` used to act on every link. Refused here, naming the field,
+   * so a dropped filter can never widen a match. (`ref` wins above, so a target that carries a bad
+   * field alongside a ref is not refused: the query never reads it.)
+   */
+  for (const field of QUERY_READ_FIELDS) {
+    const value = record[field];
+    if (value !== undefined && 'string' !== typeof value) {
+      return { kind: 'error', message: targetFieldTypeRefusal(field) };
+    }
+  }
+  const q = normalizeQueryArgs(record);
   /*
    * Look again while the step's own budget lasts, instead of once.
    *

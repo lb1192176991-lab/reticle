@@ -104,3 +104,39 @@ describe('resolveActTarget — a ref Reticle never issued', () => {
     expect(command).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A forwarded target field that is not a string was silently dropped by the browser query — a
+ * dropped `name` turned `{ role: "link", name: {} }` into "match every link", which read as
+ * ambiguity with many links and as a wrong click with one. Refused here, naming the field, so a
+ * dropped filter can never widen a match.
+ */
+describe('resolveActTarget — a target field the query reads must be a string', () => {
+  it.each([
+    { target: { role: 'link', name: {} }, field: 'target.name' },
+    { target: { role: 'link', name: 42 }, field: 'target.name' },
+    { target: { role: 'link', name: ['Learn'] }, field: 'target.name' },
+    { target: { by: 'role', value: { text: 'link' } }, field: 'target.value' },
+    { target: { by: 42, value: 'link' }, field: 'target.by' },
+    { target: { role: 'link', scope: null }, field: 'target.scope' },
+  ])('refuses $field when it is not a string, without querying', async ({ target, field }) => {
+    const { session, command } = sessionThatMustNotBeQueried();
+    const r = await resolveActTarget(session, { target, action: ActionType.CLICK });
+    expect(r).toEqual({ kind: 'error', message: `\`${field}\` must be a string` });
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it('forwards a string field to the query unchanged', async () => {
+    const command = vi.fn(() => Promise.resolve({ ok: true, result: { elements: [{ ref: 'e42' }] } }));
+    const session = { command } as unknown as Session;
+    const r = await resolveActTarget(session, {
+      target: { role: 'link', name: 'Learn' },
+      action: ActionType.CLICK,
+    });
+    expect(command).toHaveBeenCalledWith(
+      'query',
+      expect.objectContaining({ by: 'role', value: 'link', name: 'Learn' }),
+    );
+    expect(r).toEqual({ kind: 'ref', ref: 'e42' });
+  });
+});

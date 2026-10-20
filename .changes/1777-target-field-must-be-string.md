@@ -1,0 +1,3 @@
+### Fixed
+
+- **`@reticlehq/server` — a non-string `target` field is refused at the boundary instead of silently widening the match.** `{ role: "link", name: {} }` used to travel with `name` as `{}`; the browser query dropped it and matched every link — reported as ambiguity with many links, and clicked the only link with one. `reticle_act`, `reticle_act_and_wait` and every step of `reticle_act_sequence` now refuse any forwarded `target` field (`by`, `value`, `name`, `scope`) that is not a string, naming the field (`` `target.name` must be a string ``). Closes [#1777](https://github.com/reticlehq/reticle/issues/1777).
